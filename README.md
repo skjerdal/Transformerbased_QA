@@ -15,7 +15,8 @@ The goal is to build and understand a Transformer model capable of finding the a
 ## Core Components
 
 *   **`train_squad.py`**: The main script to load data, build the model, train it, evaluate (basic loss/accuracy), and save it.
-*   **`utils/squad_preprocessing.py`**: Handles loading the `squad.json` file, tokenizing text using `tf.keras.preprocessing.text.Tokenizer`, formatting inputs (`[CLS] question [SEP] context [SEP]`), and mapping answer character spans to token spans.
+*   **`utils/squad_preprocessing.py`**: Handles loading the `squad.json` file, training and utilizing the `SubwordTokenizer`, formatting inputs (`[CLS] question [SEP] context [SEP]`), and finding answer token spans.
+*   **`utils/subword_tokenizer.py`**: Implements a WordPiece subword tokenizer using the `tokenizers` library, trained from scratch on the SQuAD data. Includes methods for encoding, decoding, and managing special tokens.
 *   **`models/qa_transformer.py`**: Defines the overall Transformer architecture using custom components, outputting start and end logits for each token.
 *   **`components/`**: Contains the building blocks:
     *   `attention.py`: `MultiHeadSelfAttention` layer.
@@ -30,10 +31,10 @@ The goal is to build and understand a Transformer model capable of finding the a
 2.  **Create a Python environment** (e.g., using Conda or venv).
 3.  **Install dependencies:**
     ```bash
-    pip install tensorflow numpy
+    pip install tensorflow numpy tokenizers
     ```
     *(Ensure you have a version of TensorFlow compatible with your GPU and CUDA/cuDNN if using GPU acceleration).* 
-4.  **Download the SQuAD dataset:** Obtain the `squad.json` file (e.g., SQuAD v1.1 `train-v1.1.json`) and place it in the project's root directory.
+4.  **Download the SQuAD dataset:** Obtain the `squad.json` file (e.g., SQuAD v2.0 `train-v2.0.json`) and place it in the project's root directory.
 
 ## Running the Training
 
@@ -44,19 +45,20 @@ python train_squad.py
 ```
 
 This will:
-*   Load and preprocess a subset of the data (controlled by `MAX_SAMPLES` in the script).
+*   Load and preprocess the data.
+*   Train the subword tokenizer on the text corpus.
 *   Build the QA Transformer model with specified hyperparameters (e.g., `D_MODEL`, `NUM_HEADS`, `NUM_LAYERS`).
 *   Train the model for a set number of `EPOCHS`.
 *   Print basic validation loss and accuracy.
 *   Save the trained model to the `squad_transformer_model` directory.
 
-**Note:** Training was developed and tested using a single NVIDIA GeForce RTX 3080 GPU.
+**Note:** Training was developed and tested using a single NVIDIA GeForce RTX 3080/4070 GPU.
 
 ## Hyperparameters
 
 Key hyperparameters can be adjusted directly in `train_squad.py`:
 
-*   `VOCAB_SIZE`: Maximum vocabulary size for the tokenizer.
+*   `VOCAB_SIZE`: Maximum vocabulary size for training the subword tokenizer.
 *   `SEQUENCE_LEN`: Fixed length for input sequences (padding/truncation).
 *   `D_MODEL`: Embedding dimension / Transformer hidden size.
 *   `NUM_HEADS`: Number of attention heads.
@@ -70,7 +72,7 @@ Key hyperparameters can be adjusted directly in `train_squad.py`:
 ## Further Development / Evaluation
 
 *   Implement the full EM/F1 evaluation loop in `train_squad.py` using the functions provided in `utils/evaluation.py`.
-*   Experiment with different tokenizers (e.g., SentencePiece).
-*   Tune hyperparameters and increase `MAX_SAMPLES` for better performance.
+*   Experiment with different pre-trained tokenizers (e.g., from Hugging Face Hub) or other subword algorithms (like BPE or SentencePiece).
+*   Tune hyperparameters and use the full dataset (`MAX_SAMPLES = None`) for better performance.
 *   Implement learning rate schedules.
 *   Add detailed error analysis of model predictions. 
