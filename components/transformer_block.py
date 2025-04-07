@@ -22,13 +22,15 @@ class TransformerBlock(layers.Layer):
         self.dropout2 = layers.Dropout(dropout_rate)
 
     def call(self, x, training, mask=None):
-        # Multi-head attention
-        attn_output, attn_weights = self.mha(x, x, x, mask)
+        # Multi-head attention, passing the mask
+        # The mask passed here should be the original attention mask (batch_size, seq_len)
+        attn_output, attn_weights = self.mha(x, x, x, mask) # Pass mask to MHA
         attn_output = self.dropout1(attn_output, training=training)
         out1 = self.layernorm1(x + attn_output)
 
         # Feed forward network
         ffn_output = self.ffn(out1)
         ffn_output = self.dropout2(ffn_output, training=training)
+        # The FFN output is layer normalized using the sum of the FFN input (out1) and FFN output
         out2 = self.layernorm2(out1 + ffn_output)
         return out2, attn_weights 

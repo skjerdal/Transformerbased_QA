@@ -4,14 +4,15 @@ import string
 from collections import Counter
 import tensorflow as tf # Added for example usage explanation
 
-def time_training(model, dataset, epochs, validation_data=None, callbacks=None):
+def time_training(model, dataset, epochs, validation_data=None, callbacks=None, validation_steps=None):
     """Time the training process and return history."""
     start_time = time.time()
     history = model.fit(
-        dataset, 
+        dataset,
         epochs=epochs,
         validation_data=validation_data,
-        callbacks=[callbacks] if callbacks else None
+        callbacks=callbacks, # Pass callbacks as a list
+        validation_steps=validation_steps # Add validation_steps here
     )
     end_time = time.time()
     training_time = end_time - start_time
@@ -49,6 +50,10 @@ def normalize_text(s):
 
 def compute_f1(gold_toks, pred_toks):
     """Computes F1 score based on token overlap."""
+    # Ensure tokens are strings (debugging potential issue)
+    gold_toks = [str(tok) for tok in gold_toks]
+    pred_toks = [str(tok) for tok in pred_toks]
+
     common = Counter(gold_toks) & Counter(pred_toks)
     num_same = sum(common.values())
 
@@ -81,7 +86,8 @@ def compute_eval_metrics(gold_answer, pred_answer):
     gold_tokens = get_tokens(normalized_gold)
     pred_tokens = get_tokens(normalized_pred)
 
-    exact_score = compute_exact(gold_answer, pred_answer) # Use original for exact check nuance if needed, or normalized for robustness
+    # Use normalized versions for both EM and F1 for consistency
+    exact_score = compute_exact(normalized_gold, normalized_pred)
     f1_score = compute_f1(gold_tokens, pred_tokens)
 
     return exact_score, f1_score
