@@ -75,4 +75,36 @@ Key hyperparameters can be adjusted directly in `train_squad.py`:
 *   Experiment with different pre-trained tokenizers (e.g., from Hugging Face Hub) or other subword algorithms (like BPE or SentencePiece).
 *   Tune hyperparameters and use the full dataset (`MAX_SAMPLES = None`) for better performance.
 *   Implement learning rate schedules.
-*   Add detailed error analysis of model predictions. 
+*   Add detailed error analysis of model predictions.
+
+## Experiment Tracking with Weights & Biases
+
+This project uses [Weights & Biases (W&B)](https://wandb.ai/) for experiment tracking, visualization, and logging.
+
+### Features Tracked:
+
+*   **Hyperparameters:** All hyperparameters defined in `train_squad.py` are logged to W&B, allowing easy comparison between runs.
+*   **Metrics:** Training and validation loss, accuracy, Exact Match (EM), and F1 score are tracked throughout training and logged at the end.
+*   **Model Checkpoints:** (If configured) Model weights can be saved as W&B artifacts.
+*   **System Metrics:** GPU/CPU utilization, memory usage, etc., are automatically tracked.
+*   **Validation Examples:** A table comparing true answers and predicted answers for a subset of the validation set is logged.
+
+### Setup:
+
+1.  **Install W&B:**
+    ```bash
+    pip install wandb
+    ```
+2.  **Login:**
+    ```bash
+    wandb login
+    ```
+    You'll need a free W&B account. Follow the prompts to authenticate.
+3.  **Run Training:**
+    Simply run the training script as usual:
+    ```bash
+    python train_squad.py
+    ```
+    A new run will be automatically created in your W&B project (default is `squad-transformer-qa`, you can change this in `train_squad.py`). You'll see a link to the run page in your terminal output.
+
+Visit the W&B dashboard linked in your terminal to monitor your training runs in real-time. 
