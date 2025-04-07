@@ -4,6 +4,8 @@ from keras.preprocessing.text import Tokenizer
 from models.qa_transformer import build_qa_transformer_model
 from utils.squad_preprocessing import prepare_squad_data, load_squad_data
 from utils.evaluation import time_training, compute_eval_metrics
+import wandb
+from wandb.integration.keras import WandbCallback
 
 # Set memory growth to avoid OOM errors on smaller GPUs
 gpus = tf.config.list_physical_devices('GPU')
@@ -14,35 +16,42 @@ if gpus:
 if __name__ == '__main__':
 
     # Updated Hyperparameters for longer training & larger model
-    VOCAB_SIZE = 16000  # Adjusted based on previous run's model summary
-    SEQUENCE_LEN = 384 # Increased to reduce truncation
-    D_MODEL = 512      # Adjusted based on previous run's model summary
-    NUM_HEADS = 8      # Adjusted (128 divisible by 4)
-    DFF = 2048         # Adjusted (4 * D_MODEL)
-    NUM_LAYERS = 6     # Adjusted based on previous run's model summary
-    DROPOUT_RATE = 0.1
-    BATCH_SIZE = 16   # Kept same to manage memory with increased SEQ_LEN
-    EPOCHS = 12
-    INITIAL_LR = 5e-5  # Starting learning rate
-    END_LR = 0.0       # End learning rate for decay
-    MAX_SAMPLES = None # Use full dataset
+    hyperparameters = {
+        'VOCAB_SIZE': 30000,  # Adjusted based on previous run's model summary
+        'SEQUENCE_LEN': 384, # Increased to reduce truncation
+        'D_MODEL': 512,      # Adjusted based on previous run's model summary
+        'NUM_HEADS': 8,      # Adjusted (128 divisible by 4)
+        'DFF': 2048,         # Adjusted (4 * D_MODEL)
+        'NUM_LAYERS': 6,     # Adjusted based on previous run's model summary
+        'DROPOUT_RATE': 0.1,
+        'BATCH_SIZE': 16,   # Kept same to manage memory with increased SEQ_LEN
+        'EPOCHS': 1,
+        'INITIAL_LR': 5e-5,  # Starting learning rate
+        'END_LR': 0.0,       # End learning rate for decay
+        'MAX_SAMPLES': None # Use full dataset
+    }
     # Estimate SQuAD v1.1 train size for splitting (adjust if using a different version)
-    ESTIMATED_TOTAL_SAMPLES = 87000
+    ESTIMATED_TOTAL_SAMPLES = 100000
+
+    # Initialize W&B Run
+    wandb.init(project="squad-transformer-qa", config=hyperparameters)
+    # Access hyperparameters from wandb.config after init
+    config = wandb.config
 
     print("Preparing SQuAD dataset...")
     dataset, tokenizer = prepare_squad_data(
         'squad.json',
-        max_seq_length=SEQUENCE_LEN,
-        vocab_size=VOCAB_SIZE
+        max_seq_length=config.SEQUENCE_LEN,
+        vocab_size=config.VOCAB_SIZE
     )
 
-    dataset = dataset.batch(BATCH_SIZE)
+    dataset = dataset.batch(config.BATCH_SIZE)
 
     train_size = int(0.9 * ESTIMATED_TOTAL_SAMPLES)
     val_size = ESTIMATED_TOTAL_SAMPLES - train_size
     # Calculate steps per epoch and total steps for the learning rate schedule
-    steps_per_epoch = train_size // BATCH_SIZE
-    total_steps = steps_per_epoch * EPOCHS
+    steps_per_epoch = train_size // config.BATCH_SIZE
+    total_steps = steps_per_epoch * config.EPOCHS
 
     train_dataset = dataset.take(steps_per_epoch) # Use calculated steps
     val_dataset = dataset.skip(steps_per_epoch)
@@ -54,7 +63,7 @@ if __name__ == '__main__':
 
     print("Building QA transformer model...")
     qa_model = build_qa_transformer_model(
-        VOCAB_SIZE, SEQUENCE_LEN, D_MODEL, NUM_HEADS, DFF, NUM_LAYERS, DROPOUT_RATE
+        config.VOCAB_SIZE, config.SEQUENCE_LEN, config.D_MODEL, config.NUM_HEADS, config.DFF, config.NUM_LAYERS, config.DROPOUT_RATE
     )
 
     def start_loss(y_true, y_pred):
@@ -69,9 +78,9 @@ if __name__ == '__main__':
 
     # Create the learning rate schedule
     lr_schedule = tf.keras.optimizers.schedules.PolynomialDecay(
-        initial_learning_rate=INITIAL_LR,
+        initial_learning_rate=config.INITIAL_LR,
         decay_steps=total_steps,
-        end_learning_rate=END_LR,
+        end_learning_rate=config.END_LR,
         power=1.0  # Linear decay
     )
 
@@ -94,13 +103,17 @@ if __name__ == '__main__':
         restore_best_weights=True
     )
 
-    history, total_training_time = time_training(qa_model, train_dataset, EPOCHS, val_dataset, early_stopping)
+    # List of callbacks including W&B
+    callbacks = [early_stopping, WandbCallback()]
+
+    history, total_training_time = time_training(qa_model, train_dataset, config.EPOCHS, val_dataset, callbacks)
 
     print(f"Training completed in {total_training_time:.2f} seconds")
 
     print("\nEvaluating on validation set with EM and F1...")
 
     print("Loading raw data for validation answers...")
+    # Use config.MAX_SAMPLES if you want to limit loading, though usually we evaluate on the full set
     raw_contexts, raw_questions, raw_answers_text, _ = load_squad_data('squad.json')
     val_answers_text = raw_answers_text[train_size:]
     print(f"Loaded {len(raw_answers_text)} total raw examples, attempting to use {len(val_answers_text)} for validation.")
@@ -109,7 +122,11 @@ if __name__ == '__main__':
     total_f1 = 0
     eval_count = 0
 
-    reverse_word_index = {v: k for k, v in tokenizer.word_index.items()}
+    # Get reverse word index from our trained subword tokenizer
+    reverse_word_index = {v: k for k, v in tokenizer.vocab.items()}
+
+    # Log EM and F1 to W&B
+    eval_table = wandb.Table(columns=["Index", "True Answer", "Predicted Answer", "EM", "F1"])
 
     for batch_index, (batch_inputs, batch_labels) in enumerate(val_dataset):
         batch_start_true, batch_end_true = batch_labels
@@ -117,7 +134,7 @@ if __name__ == '__main__':
         batch_start_logits, batch_end_logits = qa_model.predict(batch_inputs, verbose=0)
 
         for i in range(batch_inputs.shape[0]):
-            current_raw_index = batch_index * BATCH_SIZE + i
+            current_raw_index = batch_index * config.BATCH_SIZE + i
             if current_raw_index >= len(val_answers_text):
                 break
 
@@ -130,10 +147,12 @@ if __name__ == '__main__':
 
             pred_text = ""
             if pred_start <= pred_end:
+                # Use tokenizer's decode method for accurate subword decoding
+                # Ensure indices are within bounds and handle CLS/SEP tokens implicitly by decode
                 predicted_token_ids = input_seq[pred_start : pred_end + 1]
-                predicted_token_ids = [tok for tok in predicted_token_ids if tok > 2]
-                predicted_words = [reverse_word_index.get(tok_id, '<UNK>') for tok_id in predicted_token_ids]
-                pred_text = " ".join(predicted_words)
+                # Filter out special tokens if necessary (decode might handle it)
+                # predicted_token_ids = [tok for tok in predicted_token_ids if tok not in [tokenizer.cls_token_id, tokenizer.sep_token_id, tokenizer.pad_token_id]]
+                pred_text = tokenizer.decode(predicted_token_ids)
 
             true_text = val_answers_text[current_raw_index]
 
@@ -142,21 +161,22 @@ if __name__ == '__main__':
             total_f1 += f1
             eval_count += 1
 
-            if eval_count <= 5:
-                print("-" * 20)
-                print(f"Example {eval_count}")
-                print(f"  True Answer: '{true_text}'")
-                print(f"  Pred Answer: '{pred_text}' (Indices: {pred_start}-{pred_end})")
-                print(f"  EM: {em}, F1: {f1}")
+            # Add rows to W&B Table (optional, can be verbose)
+            if eval_count <= 100: # Log first 100 examples
+                eval_table.add_data(eval_count, true_text, pred_text, em, f1)
 
     avg_em = total_em / eval_count if eval_count > 0 else 0
     avg_f1 = total_f1 / eval_count if eval_count > 0 else 0
 
     print("\n" + "=" * 30)
-    print(f"Validation Results ({eval_count} examples):")
-    print(f"  Average Exact Match (EM): {avg_em:.4f}")
-    print(f"  Average F1 Score:         {avg_f1:.4f}")
-    print("=" * 30)
+    print(f"Validation Exact Match: {avg_em:.4f}")
+    print(f"Validation F1 Score:    {avg_f1:.4f}")
+    print("=" * 30 + "\n")
 
-    qa_model.save('squad_transformer_model')
-    print("\nModel saved to 'squad_transformer_model'") 
+    # Log final EM and F1 scores to W&B
+    wandb.log({"validation_em": avg_em, "validation_f1": avg_f1})
+    # Log the table of examples
+    wandb.log({"validation_examples": eval_table})
+
+    # Finish the W&B run
+    wandb.finish() 
