@@ -78,77 +78,128 @@ def create_qa_inputs(contexts, questions, answers_text, answer_starts_char, toke
         attention_mask = encoded["attention_mask"]
         token_type_ids = encoded["token_type_ids"] # 0 for question, 1 for context
 
+        # --- Use char_to_token for more robust mapping --- 
+        # Find the start and end token indices corresponding to the answer's character span
+        # Need the sequence_ids to distinguish context from question
+        sequence_ids = encoded.sequence_ids()
+        
+        # Find the first and last token indices of the context
+        context_start_token_idx = -1
+        context_end_token_idx = -1
+        for idx, seq_id in enumerate(sequence_ids):
+            if seq_id == 1: # Context part
+                if context_start_token_idx == -1:
+                    context_start_token_idx = idx
+                context_end_token_idx = idx # Keep updating to find the last one
+                
+        token_start_index = -1
+        token_end_index = -1
+        
+        # Use char_to_token to find the start token index
+        # It returns None if the char index is out of bounds or maps to padding/CLS etc.
+        start_token_candidate = encoded.char_to_token(ans_start_char, sequence_index=1) # sequence_index=1 for context
+        
+        # Use char_to_token for the *last* character of the answer to find the end token
+        end_token_candidate = encoded.char_to_token(ans_end_char - 1, sequence_index=1)
+
+        # Validate: Check if candidates were found and are within the context span
+        if (start_token_candidate is not None and 
+            end_token_candidate is not None and
+            start_token_candidate >= context_start_token_idx and 
+            start_token_candidate <= context_end_token_idx and
+            end_token_candidate >= context_start_token_idx and
+            end_token_candidate <= context_end_token_idx and
+            start_token_candidate <= end_token_candidate): # Ensure start <= end
+                
+            token_start_index = start_token_candidate
+            token_end_index = end_token_candidate
+        else:
+            # Fallback or skip: If char_to_token fails or gives inconsistent results
+            # Let's try the offset mapping approach as a fallback (optional, could just skip)
+            # Note: Keeping the original offset loop as fallback adds complexity.
+            # For simplicity, let's just mark as not found if char_to_token fails.
+            num_not_found += 1
+            # Log details if needed for debugging
+            # print(f"Warn: char_to_token failed for example {i}. Start char: {ans_start_char}, End char: {ans_end_char-1}")
+            # print(f"  Start Tok Cand: {start_token_candidate}, End Tok Cand: {end_token_candidate}")
+            # print(f"  Context Tok Span: [{context_start_token_idx}, {context_end_token_idx}]")
+            continue # Skip this example if mapping failed
+
+        # --- End of char_to_token mapping --- 
+
         # Find the start and end token indices corresponding to the answer's character span
         # Use token_type_ids to identify context tokens (where token_type_id == 1)
-        context_token_indices = [idx for idx, type_id in enumerate(token_type_ids) if type_id == 1]
+        # context_token_indices = [idx for idx, type_id in enumerate(token_type_ids) if type_id == 1]
 
-        if not context_token_indices:
-            # This might happen if the context gets fully truncated
-            num_not_found += 1
-            # Log if context was present but got truncated away entirely
-            # if context: print(f"Warning: Context possibly truncated entirely for example {i}")
-            continue
+        # if not context_token_indices:
+        #     # This might happen if the context gets fully truncated
+        #     num_not_found += 1
+        #     # Log if context was present but got truncated away entirely
+        #     # if context: print(f"Warning: Context possibly truncated entirely for example {i}")
+        #     continue
 
-        context_start_token = min(context_token_indices)
-        context_end_token = max(context_token_indices)
+        # context_start_token = min(context_token_indices)
+        # context_end_token = max(context_token_indices)
 
-        # Find the token index covering the start character
-        # Iterate only through context tokens
-        token_start_index = -1
-        for idx in range(context_start_token, context_end_token + 1):
-            start_char, end_char = offsets[idx]
-            # Check if token is within context (already guaranteed by loop range)
-            # and its start char offset covers the answer start, and it's a valid span
-            if start_char <= ans_start_char < end_char:
-                token_start_index = idx
-                break
+        # # Find the token index covering the start character
+        # # Iterate only through context tokens
+        # token_start_index = -1
+        # for idx in range(context_start_token, context_end_token + 1):
+        #     start_char, end_char = offsets[idx]
+        #     # Check if token is within context (already guaranteed by loop range)
+        #     # and its start char offset covers the answer start, and it's a valid span
+        #     if start_char <= ans_start_char < end_char:
+        #         token_start_index = idx
+        #         break
 
-        # Find the token index covering the end character
-        # Iterate backwards through context tokens
-        token_end_index = -1
-        for idx in range(context_end_token, context_start_token - 1, -1):
-            start_char, end_char = offsets[idx]
-            # Check if token is within context (guaranteed by loop range)
-            # and its end char offset covers the answer end, and it's a valid span
-            if start_char < ans_end_char <= end_char:
-                token_end_index = idx
-                break
-                
-        # More robust check: Handle cases where answer starts at the beginning of a token AND ends at the end of the same token.
-        # Ensure the start is found first.
-        # if token_start_index != -1 and token_end_index == -1:
-        #     # Check if the end char is within the start token itself
-        #     start_char, end_char = offsets[token_start_index]
+        # # Find the token index covering the end character
+        # # Iterate backwards through context tokens
+        # token_end_index = -1
+        # for idx in range(context_end_token, context_start_token - 1, -1):
+        #     start_char, end_char = offsets[idx]
+        #     # Check if token is within context (guaranteed by loop range)
+        #     # and its end char offset covers the answer end, and it's a valid span
         #     if start_char < ans_end_char <= end_char:
-        #          token_end_index = token_start_index
+        #         token_end_index = idx
+        #         break
+                
+        # # More robust check: Handle cases where answer starts at the beginning of a token AND ends at the end of the same token.
+        # # Ensure the start is found first.
+        # # if token_start_index != -1 and token_end_index == -1:
+        # #     # Check if the end char is within the start token itself
+        # #     start_char, end_char = offsets[token_start_index]
+        # #     if start_char < ans_end_char <= end_char:
+        # #          token_end_index = token_start_index
 
 
-        # Validate the found indices
-        if (token_start_index == -1 or
-            token_end_index == -1 or
-            token_start_index > token_end_index): # Ensure start <= end
-            num_not_found += 1
-            # Optionally log problematic examples here
-            # print(f"Warning: Answer span not found or invalid for example {i}. Start={token_start_index}, End={token_end_index}")
-            # print(f"  Context: {context[:50]}...")
-            # print(f"  Question: {question}")
-            # print(f"  Answer: '{answer}' ({ans_start_char}-{ans_end_char})")
-            # # Log relevant offsets
-            # context_offsets = [offsets[k] for k in range(context_start_token, context_end_token + 1)]
-            # print(f"  Context Offsets: {context_offsets}")
+        # # Validate the found indices
+        # if (token_start_index == -1 or
+        #     token_end_index == -1 or
+        #     token_start_index > token_end_index): # Ensure start <= end
+        #     num_not_found += 1
+        #     # Optionally log problematic examples here
+        #     # print(f"Warning: Answer span not found or invalid for example {i}. Start={token_start_index}, End={token_end_index}")
+        #     # print(f"  Context: {context[:50]}...")
+        #     # print(f"  Question: {question}")
+        #     # print(f"  Answer: '{answer}' ({ans_start_char}-{ans_end_char})")
+        #     # # Log relevant offsets
+        #     # context_offsets = [offsets[k] for k in range(context_start_token, context_end_token + 1)]
+        #     # print(f"  Context Offsets: {context_offsets}")
+        #     continue # Skip if invalid span found by offset mapping
 
         # Check if the found span is within the max sequence length (redundant with padding='max_length', but safe)
-        elif token_start_index >= max_seq_length or token_end_index >= max_seq_length:
-             num_truncated_away += 1 # Should ideally be 0 with padding='max_length'
-        else:
-            # Valid example found
-            all_input_ids.append(input_ids)
-            all_attention_masks.append(attention_mask)
-            # We don't necessarily need to store token_type_ids unless the model uses them
-            # all_token_type_ids.append(token_type_ids) 
-            start_positions.append(token_start_index)
-            end_positions.append(token_end_index)
-            num_valid += 1
+        # Note: This check might be less necessary now as char_to_token handles boundaries
+        # elif token_start_index >= max_seq_length or token_end_index >= max_seq_length:
+        #      num_truncated_away += 1 # Should ideally be 0 with padding='max_length'
+        # else:
+        # Valid example found
+        all_input_ids.append(input_ids)
+        all_attention_masks.append(attention_mask)
+        # We don't necessarily need to store token_type_ids unless the model uses them
+        # all_token_type_ids.append(token_type_ids) 
+        start_positions.append(token_start_index) # Use validated index
+        end_positions.append(token_end_index)     # Use validated index
+        num_valid += 1
 
         if (i + 1) % 5000 == 0:
             print(f"Processed {i+1}/{len(contexts)} examples... (Valid: {num_valid}, Not Found: {num_not_found}, Truncated: {num_truncated_away})")
@@ -173,11 +224,11 @@ def create_qa_inputs(contexts, questions, answers_text, answer_starts_char, toke
     # (Token type IDs are not needed by the current model definition)
     return final_input_ids, final_attention_masks, final_start_positions, final_end_positions
 
-def prepare_squad_data(file_path, max_seq_length=384, vocab_size=None, tokenizer_name='bert-base-uncased'):
+def prepare_squad_data(file_path, max_seq_length=384, vocab_size=None, tokenizer_name='bert-base-uncased', max_samples=None):
     """Prepare SQuAD data for training using a pretrained BertTokenizerFast."""
     # Load data
     print("Loading SQuAD data...")
-    contexts, questions, answers_text, answers_start_char = load_squad_data(file_path)
+    contexts, questions, answers_text, answers_start_char = load_squad_data(file_path, max_samples=max_samples)
     print(f"Loaded {len(contexts)} examples")
 
     # Load pretrained tokenizer

@@ -1,0 +1,11 @@
+{
+  "model_name": "distilbert-base-uncased",
+  "max_seq_length": 384,
+  "doc_stride": 128,
+  "best_epoch": 1,
+  "metrics": {
+    "em": 75.35477767265847,
+    "f1": 83.47077360936086,
+    "val_loss": 1.1445685625076294
+  }
+}

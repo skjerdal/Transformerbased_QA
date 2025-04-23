@@ -3,9 +3,14 @@ from tensorflow import keras
 from keras import layers
 from components.positional_encoding import PositionalEncoding
 from components.transformer_block import TransformerBlock
+from transformers import TFDistilBertModel # Import the base model
+import logging # Add logging
+import numpy as np # Import numpy
+
+logger = logging.getLogger(__name__) # Setup logger
 
 def build_qa_transformer_model(vocab_size, sequence_len, d_model, num_heads, dff, num_layers, dropout_rate=0.1):
-    """Build a transformer model for question answering, accepting input_ids and attention_mask."""
+    """Build a transformer model."""
     # Define two inputs: one for token IDs, one for the attention mask
     input_ids = layers.Input(shape=(sequence_len,), dtype='int32', name='input_ids')
     attention_mask = layers.Input(shape=(sequence_len,), dtype='int32', name='attention_mask')
@@ -27,22 +32,24 @@ def build_qa_transformer_model(vocab_size, sequence_len, d_model, num_heads, dff
     # We create it here and pass it down.
     mask_for_attention = tf.cast(attention_mask[:, tf.newaxis, tf.newaxis, :], dtype=tf.float32)
     # Invert mask: 0 where attention_mask is 1, 1 where attention_mask is 0
-    # mask_for_attention = 1.0 - mask_for_attention
+    mask_for_attention = 1.0 - mask_for_attention
     # Multiply by large negative number
-    # mask_for_attention *= -1e9 # This will be added to attention scores
+    mask_for_attention *= -1e9
 
     # Stack multiple Transformer blocks, passing the mask
     attention_weights_all = {}
     for i in range(num_layers):
-        transformer_block = TransformerBlock(d_model, num_heads, dff, dropout_rate)
-        # Pass the original attention_mask (or derived mask) to the block
-        x, attn_weights = transformer_block(x, training=True, mask=attention_mask) # Pass mask here
+        transformer_block = TransformerBlock(d_model, num_heads, dff, dropout_rate, name=f'transformer_block_{i}')
+        # Pass the processed mask_for_attention to the block
+        x, attn_weights = transformer_block(x, training=True, mask=mask_for_attention)
         attention_weights_all[f'layer_{i+1}'] = attn_weights
 
-    # For QA, we need two outputs: start and end position logits
-    # We'll use the sequence output for both
-    start_logits = layers.Dense(1, name='start_logits')(x)
-    end_logits = layers.Dense(1, name='end_logits')(x)
+    # --- MODIFIED OUTPUT HEAD ---
+    # Use a single Dense layer to predict both start and end logits together
+    qa_outputs = layers.Dense(2, name='qa_outputs')(x) # Shape: (batch_size, sequence_len, 2)
+
+    # Split the output into start_logits and end_logits
+    start_logits, end_logits = tf.split(qa_outputs, 2, axis=-1) # Each has shape (batch_size, sequence_len, 1)
 
     # Squeeze the last dimension to get shape (batch_size, sequence_len)
     start_logits = layers.Lambda(lambda t: tf.squeeze(t, axis=-1), name='squeeze_start')(start_logits)

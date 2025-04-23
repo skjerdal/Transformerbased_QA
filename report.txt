@@ -1,0 +1,150 @@
+I confirm that the work is self-prepared and that references/source references to all sources used in the
+work are provided, cf. Regulation relating to academic studies and examinations at the Western Norway
+University of Applied Sciences (HVL), §10.
+
+Project report in DAT255 – Deep Learning Engineering
+
+Project title: Building and Training a Custom Transformer for Extractive Question Answering on SQuAD
+
+Date: [Insert Date, e.g., April 21, 2025]
+
+Group member 1 (candidate number [Insert Candidate Number])
+Group member 2, (candidate number [Insert Candidate Number])
+Group member 3, (candidate number [Insert Candidate Number])
+
+---
+
+**Problem description**
+
+*   **What problem does the project solve?**
+    The project addresses the problem of extractive question answering (QA). Given a question and a context paragraph, the goal is to identify and extract the continuous span of text within the context that answers the question. The primary motivation was educational: to gain a deep understanding of the Transformer architecture and the challenges involved in training such models from scratch by building the core components manually.
+
+*   **How will the solution be used? (Is deployment a part of the project?)**
+    The immediate goal was not deployment but rather learning and experimentation. A potential future use could be integrating the model into a system requiring automated QA from provided documents. Deployment was not a part of this project phase.
+
+*   **Why is deep learning a good approach to this problem? Can traditional methods be used?**
+    Deep learning, particularly Transformer-based models, excels at this task due to its ability to understand context, capture long-range dependencies between words in the question and the context paragraph, and model complex semantic relationships. Traditional NLP methods (e.g., rule-based systems, TF-IDF with keyword matching) struggle to handle the nuances of language, context dependence, and paraphrasing required for robust QA.
+
+*   **Are there already existing solutions? If so, how is your project improving upon them?**
+    Yes, numerous highly effective pre-trained Transformer models exist (e.g., BERT, DistilBERT, RoBERTa, ALBERT) that achieve state-of-the-art performance on SQuAD after fine-tuning. This project was *not* aimed at improving upon these SOTA models in terms of performance. Instead, its value lies in the process of building a comparable architecture from the ground up to understand its inner workings, limitations, and the significant advantages conferred by pre-training. The comparison *against* these existing solutions (via a baseline test) became a key part of the evaluation.
+
+**Data**
+
+*   **Describe the data you use, and why you chose it.**
+    The project uses the Stanford Question Answering Dataset (SQuAD), specifically SQuAD v1.1 (or v2.0, though focusing on answerable questions). SQuAD is a standard benchmark dataset for extractive QA, consisting of questions posed by crowdworkers on a set of Wikipedia articles, where the answer to every question is a segment of text from the corresponding reading passage.
+
+*   **Discuss pros and cons of the dataset, and why it is suitable for deep learning.**
+    *   **Pros:** Large-scale (~100k+ QA pairs in v2.0), widely used benchmark facilitating comparison, answers are direct text spans simplifying the task definition, covers diverse topics from Wikipedia. Its size and structure make it suitable for training deep learning models.
+    *   **Cons:** Answers are always exact spans (limits applicability to abstractive QA), potential for annotation artifacts or biases, requires significant computational resources for training models from scratch.
+
+*   **Do alternative datasets exist?**
+    Yes, alternatives include Natural Questions, TriviaQA, NewsQA, each with different characteristics (e.g., longer answers, different question sources, abstractive answers). SQuAD was chosen for its focus on extractive QA and its status as a standard benchmark.
+
+*   **If you are comparing your model(s) to pretrained ones, describe which data the pretrained models are trained on.**
+    The baseline model used `distilbert-base-uncased`, which was pre-trained on a large corpus derived from BookCorpus and English Wikipedia. This massive, general-domain pre-training data provides the model with a strong foundation in English language understanding before fine-tuning on SQuAD.
+
+*   **Describe any reformatting of the data that was necessary to make the data fit the model.**
+    Significant preprocessing was required:
+    1.  **Tokenization:** Initially, custom word-level tokenizers were used, but this proved limiting (OOV issues). The project later switched to using a pre-trained `BertTokenizerFast` (subword tokenizer) from the Hugging Face `transformers` library.
+    2.  **Input Formatting:** Inputs were formatted according to BERT-style conventions: `[CLS] question [SEP] context [SEP]`. Padding was applied to ensure fixed sequence lengths (`SEQUENCE_LEN=384`). Attention masks were generated to indicate padding tokens.
+    3.  **Label Generation:** The core challenge was mapping the character-based answer start/end indices from SQuAD to token-based start/end indices compatible with the tokenizer. This involved using the tokenizer's `offset_mapping` and `sequence_ids` to locate the tokens corresponding to the answer span within the tokenized context part of the input sequence. Initial attempts involved error-prone list matching, later refined using the offset mapping. Features where the answer span was not fully contained within the processed context segment (due to truncation/stride) were handled by setting the start/end label to the `[CLS]` token index (0).
+    4.  **Dataset Conversion:** The processed data (using Hugging Face `datasets`) was converted into `tf.data.Dataset` format for efficient training in TensorFlow, ensuring the correct input structure `((input_ids, attention_mask), (start_positions, end_positions))`.
+
+*   **Describe the augmentation methods you used.**
+    No data augmentation methods were used in this project.
+
+**Model implementation**
+
+*   **Which different models and architectures did you consider?**
+    1.  **Custom Transformer:** The primary focus. An encoder-only Transformer architecture built from scratch using Keras layers. Key components included custom positional encoding, multi-head self-attention (initially custom, later standard Keras layer), feed-forward networks, and layer normalization (initially Post-LN, later Pre-LN).
+    2.  **Fine-tuned Pre-trained Baseline:** A standard `distilbert-base-uncased` model from Hugging Face with a simple QA head (Dense layer predicting 2 outputs for start/end logits) was implemented (`simpler_baseline_tf210.py`) for comparison purposes, specifically adapted to run under TensorFlow 2.10 constraints.
+
+*   **Give a theoretical motivation for your model choice(s).**
+    The Transformer architecture was chosen because its self-attention mechanism is highly effective at modeling dependencies between tokens in the question and context, regardless of their distance. This is crucial for QA, where understanding the relationship between question words and relevant context words is key. The encoder-only structure is suitable as the task doesn't require generating new text but rather identifying positions within the input. Pre-Layer Normalization (Pre-LN) was adopted over Post-LN based on empirical results (Test 4 vs Test 1) showing improved training stability, a common finding in Transformer literature.
+
+*   **If possible, make a diagram or flowchart of the model structure.**
+    (Conceptual Description - Refer to code for details)
+    Input (`input_ids`, `attention_mask`) -> Embedding Layer (+ Positional Encoding) -> N x Transformer Blocks [ Pre-LayerNorm -> MultiHeadSelfAttention (Keras) -> Residual -> Pre-LayerNorm -> FeedForward -> Residual ] -> Dense(2) Layer -> Split into `start_logits` and `end_logits`.
+
+*   **Discuss which hyperparameters are important to the performance of the model, and how you intend to optimise them.**
+    Key hyperparameters identified and tuned through extensive experimentation (see Project Log in `README.md`):
+    *   `D_MODEL`, `NUM_LAYERS`, `NUM_HEADS`, `DFF`: Transformer dimensions. Tuned manually (e.g., 6 vs 12 layers). Larger models generally have higher capacity but are harder to train from scratch.
+    *   `DROPOUT_RATE`: Regularization. Experimented with 0.05, 0.1, 0.15, 0.2. Found 0.1 optimal for the 6-layer model, while lower/higher values hindered performance.
+    *   `LEARNING_RATE` & Schedule: Crucial for convergence. Tried fixed rates, `PolynomialDecay`, and eventually `WarmupPolynomialDecay`. Initial LR values of 3e-5 and 5e-5 were tested. 5e-5 seemed best for the final configuration.
+    *   Optimizer: Tested standard `Adam` and `AdamW` (from `tensorflow-addons`). Standard `Adam` yielded the best results for the custom model (Test 16 vs Test 24).
+    *   `WEIGHT_DECAY`: Tested with `AdamW`, but minimal (`5e-5`) or standard (`0.01`) values did not improve performance over standard `Adam` for this setup.
+    *   `BATCH_SIZE`: Kept constant at 16.
+    Optimization was done manually through iterative testing logged in the `README.md`, guided by validation loss and metrics. Due to computational constraints (long training times), a systematic grid/random search was not feasible.
+
+*   **Details about the training procedure...**
+    *   **Optimizer:** Final best runs used `tf.keras.optimizers.Adam`.
+    *   **Loss Functions:** `tf.keras.losses.sparse_categorical_crossentropy` (applied separately to start and end logits, then averaged). Label smoothing was attempted but failed due to TF 2.10 incompatibility (Test 19).
+    *   **Regularisation:** Primarily Dropout (`DROPOUT_RATE=0.1` found best). Weight decay via AdamW was less effective.
+    *   **Cross-validation:** None used; standard train/validation split from SQuAD.
+    *   **Callbacks:** `EarlyStopping` (monitoring `val_loss`, patience=5, `restore_best_weights=True`), `ModelCheckpoint` (monitoring `val_loss`, `save_best_only=True`, configured to save full model state for resumption), `WandbCallback` (for logging metrics, hyperparameters, and validation examples to Weights & Biases).
+    *   **Data Loading:** Used Hugging Face `datasets` library for loading/preprocessing and `tf.data.Dataset` for efficient batching and training pipeline.
+
+*   **Code References:**
+    *   Main training script: `train_squad.py`
+    *   Model definition: `models/qa_transformer.py`
+    *   Transformer components: `components/` directory
+    *   Data preprocessing: `utils/hf_squad_preprocessing.py`
+    *   Evaluation helpers: `utils/evaluation.py`
+    *   Baseline implementation: `simpler_baseline_tf210.py`
+    *   GitHub Repo URL: [Insert Your GitHub Repo URL Here]
+
+**Evaluation**
+
+*   **Which metrics do you use?**
+    *   Primary: Standard SQuAD metrics - Exact Match (EM) and F1-score (macro-averaged over examples), calculated on a subset (first 100) of the validation set during training for logging via W&B.
+    *   Secondary: Validation Loss (for `EarlyStopping` and `ModelCheckpoint`), training/validation start/end token accuracy.
+
+*   **How did you estimate baseline performance?**
+    A baseline was established by implementing a simple fine-tuning script (`simpler_baseline_tf210.py`) using a pre-trained `distilbert-base-uncased` model. This baseline was trained on the **exact same small subset (3000 samples)** used in initial custom model tests. The baseline achieved ~69% F1 after only 3 epochs, demonstrating that the data subset *was* sufficient for good performance with a pre-trained model and highlighting the difficulty faced by the custom model trained from scratch.
+
+*   **Did you involve any explanation or interpretation techniques...?**
+    No specific techniques like attention visualization, heatmaps, or feature importance were implemented. Interpretation was primarily based on analyzing loss curves, accuracy metrics, EM/F1 scores, and observing overfitting patterns across different configurations and dataset sizes (logged via W&B).
+
+*   **Did you fully exploit the potential of the model architecture?**
+    Likely not when training from scratch. The best performance achieved (Test 16: ~8% EM / ~16% F1) is far below what similar architectures achieve with pre-training. Training from scratch proved extremely challenging and sensitive to hyperparameters. The experiments suggest a performance ceiling was hit, potentially due to optimization difficulties or the inherent need for pre-training knowledge for this task scale. Transfer learning attempts were made (Tests 9/10) but failed due to technical issues loading multi-head attention weights between Hugging Face and Keras layers.
+
+*   **Are there supplementary metrics that are relevant...?**
+    Runtime was logged for some of the longer training runs on the full dataset (e.g., Test 16 took ~4.4 hours for 20 epochs, Test 25 took ~11 hours for 16 epochs). While inference time wasn't explicitly measured, the custom model (56M parameters) would likely have comparable inference speed to similar-sized pre-trained models like BERT-base. Hardware used was an NVIDIA RTX 3080/4070.
+
+**Deployment**
+
+*   **Describe how you have deployed the model, or, how you would have deployed it.**
+    The model was not deployed. A hypothetical deployment could involve:
+    1.  Saving the trained Keras model (using `model.save()`).
+    2.  Using TensorFlow Serving or a web framework (like Flask/FastAPI) with TF Lite/ONNX runtime for optimized inference.
+    3.  Creating an API endpoint accepting (question, context) pairs and returning the predicted answer span.
+    4.  Building a simple frontend for user interaction.
+
+*   **Did your chosen framework offer the functionality needed...?**
+    Yes, TensorFlow/Keras provides SavedModel format for easy saving and compatibility with TensorFlow Serving for deployment. Conversion to TF Lite or ONNX is also possible for edge/optimized deployment.
+
+*   **How would the project be monitored and maintained for future use?**
+    Monitoring would involve tracking prediction latency, resource usage, and potentially user feedback. Performance drift could be monitored by periodically re-evaluating on a held-out test set. Maintenance would involve retraining the model on newer/larger datasets, updating dependencies, and potentially addressing issues discovered in production.
+
+*   **How can the project be expanded to improve user experience?**
+    A simple web UI could be built. Error handling for cases where no plausible answer is found could be added. Integration with document retrieval systems could allow querying larger knowledge bases.
+
+**Conclusion**
+
+*   **Reflect upon the project results. How did it go?**
+    The project was a valuable, albeit challenging, learning experience. The primary goal of building a custom Transformer from scratch and understanding its components was achieved. However, getting the custom model to achieve competitive performance when trained from scratch proved extremely difficult. Numerous iterations involving debugging preprocessing, fixing evaluation logic, tuning hyperparameters (LR, optimizer, dropout, depth), and altering architecture (LayerNorm, output head) were necessary. The baseline comparison definitively showed the immense benefit of pre-training. While the custom model *did* eventually show signs of learning and achieved modest performance (~16% F1) after extensive training on the full dataset (Test 16), it hit a clear ceiling far below the baseline. Attempting transfer learning was hindered by technical difficulties in weight mapping.
+
+*   **In hindsight, were the chosen metrics good measures for the success of the project?**
+    Yes, EM and F1 are the standard metrics for SQuAD and accurately reflected the model's ability to find correct answer spans. Validation loss was essential for monitoring training progress and implementing early stopping/checkpointing.
+
+*   **In general, did deep learning offer a good solution to the problem? What could have been done differently?**
+    Deep learning, specifically Transformers, is undoubtedly the best approach for this problem, as demonstrated by the baseline's success. However, the project highlighted that *training from scratch* is often impractical without massive datasets and computational resources, or extremely careful tuning.
+    What could have been done differently:
+    1.  **Establish Baseline Earlier:** Running the pre-trained baseline sooner would have more quickly pinpointed whether the issue was data size or the custom implementation.
+    2.  **Prioritize Transfer Learning:** Given the difficulty of training from scratch, attempting transfer learning earlier (and potentially finding workarounds for weight loading issues, e.g., loading only compatible layers) might have been a more fruitful path towards a functional model.
+    3.  **Leverage Existing Implementations More:** Instead of building everything from scratch, using more standard Keras layers or Hugging Face model components could have bypassed potential bugs in custom implementations.
+    4.  **Systematic Hyperparameter Search (if resources allowed):** A more structured search could potentially have found a better configuration for the custom model, though likely still underperforming the baseline significantly.
+
+**References**
+
+[User to add references here - e.g., Vaswani et al. (Attention is All You Need), Devlin et al. (BERT), SQuAD paper, TensorFlow/Keras documentation, Hugging Face documentation, etc.] 
