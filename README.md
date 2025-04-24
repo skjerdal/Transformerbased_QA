@@ -15,15 +15,13 @@ The goal is to build and understand a Transformer model capable of finding the a
 ## Core Components
 
 *   **`train_squad.py`**: The main script to load data, build the model, train it, evaluate (basic loss/accuracy), and save it.
-*   **`utils/squad_preprocessing.py`**: Handles loading the `squad.json` file, training and utilizing the `SubwordTokenizer`, formatting inputs (`[CLS] question [SEP] context [SEP]`), and finding answer token spans.
-*   **`utils/subword_tokenizer.py`**: Implements a WordPiece subword tokenizer using the `tokenizers` library, trained from scratch on the SQuAD data. Includes methods for encoding, decoding, and managing special tokens.
+*   **`utils/hf_squad_preprocessing.py`**: Handles loading the SQuAD dataset from Hugging Face, utilizing the Hugging Face tokenizer, formatting inputs (`[CLS] question [SEP] context [SEP]`), and finding answer token spans.
 *   **`models/qa_transformer.py`**: Defines the overall Transformer architecture using custom components, outputting start and end logits for each token.
 *   **`components/`**: Contains the building blocks:
     *   `attention.py`: `MultiHeadSelfAttention` layer.
     *   `positional_encoding.py`: `PositionalEncoding` layer.
     *   `transformer_block.py`: Combines attention and feed-forward layers into a standard `TransformerBlock`.
 *   **`utils/evaluation.py`**: Contains helper functions for timing training and calculating SQuAD evaluation metrics (EM, F1 - requires integration into the training script for full use).
-*   **`squad.json`**: The dataset file (not included in the repo, should be downloaded separately).
 
 ## Setup
 
@@ -34,7 +32,7 @@ The goal is to build and understand a Transformer model capable of finding the a
     pip install tensorflow numpy tokenizers
     ```
     *(Ensure you have a version of TensorFlow compatible with your GPU and CUDA/cuDNN if using GPU acceleration).* 
-4.  **Download the SQuAD dataset:** Obtain the `squad.json` file (e.g., SQuAD v2.0 `train-v2.0.json`) and place it in the project's root directory.
+4.  **Note on dataset:** The SQuAD dataset is automatically downloaded from Hugging Face when you run the script. No manual download is required.
 
 ## Running the Training
 
