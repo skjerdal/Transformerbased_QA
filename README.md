@@ -77,14 +77,6 @@ Key hyperparameters can be adjusted directly in `train_squad.py`:
 *   `EPOCHS`: Number of passes through the training data.
 *   `MAX_SAMPLES`: Maximum number of SQuAD examples to load (for faster experimentation).
 
-## Further Development / Evaluation
-
-*   Implement the full EM/F1 evaluation loop in `train_squad.py` using the functions provided in `utils/evaluation.py`.
-*   Experiment with different pre-trained tokenizers (e.g., from Hugging Face Hub) or other subword algorithms (like BPE or SentencePiece).
-*   Tune hyperparameters and use the full dataset (`MAX_SAMPLES = None`) for better performance.
-*   Implement learning rate schedules.
-*   Add detailed error analysis of model predictions.
-
 ## Experiment Tracking with Weights & Biases
 
 This project uses [Weights & Biases (W&B)](https://wandb.ai/) for experiment tracking, visualization, and logging.
