@@ -1,17 +1,12 @@
 import numpy as np
 import tensorflow as tf
 from models.qa_transformer import build_qa_transformer_model
-from utils.squad_preprocessing import prepare_squad_data, load_squad_data
 from utils.evaluation import time_training, compute_eval_metrics, get_predictions_from_logits, format_predictions_for_evaluation, format_references_for_evaluation
 import wandb
-# Use the original Wandb Keras callback
 from wandb.integration.keras import WandbCallback
-# Import new Hugging Face data pipeline
 from utils.hf_squad_preprocessing import prepare_squad_data_with_hf
 import os
-import logging # Make sure logging is imported
-# Import AdamW from Tensorflow Addons
-import tensorflow_addons as tfa # Comment out or remove
+import logging
 
 # Setup logger
 logging.basicConfig(level=logging.INFO)
@@ -86,7 +81,6 @@ if gpus:
 
 if __name__ == '__main__':
 
-    # --- Hyperparameters Reverted to Training Test 5 Style --- 
     print("\n*** RUNNING WITH CUSTOM MODEL CONFIGURATION (Reverted) ***\n")
     hyperparameters = {
         'TOKENIZER': 'bert-base-uncased', 
@@ -133,22 +127,18 @@ if __name__ == '__main__':
         config.DFF,
         config.NUM_LAYERS,
         config.DROPOUT_RATE
-        # Removed model_checkpoint and load_pretrained_weights args
     )
 
-    # Loss functions - Revert to standard functional loss without label smoothing
     def start_loss(y_true, y_pred):
         return tf.keras.losses.sparse_categorical_crossentropy(y_true, y_pred, from_logits=True)
     def end_loss(y_true, y_pred):
         return tf.keras.losses.sparse_categorical_crossentropy(y_true, y_pred, from_logits=True)
 
-    # --- Use AdamW with Custom Warmup + PolynomialDecay schedule --- 
-    print("\n--- USING AdamW Optimizer with WarmupPolynomialDecay --- ")
-    # Calculate decay steps (total steps *after* warmup)
+    print("\n--- USING Adam Optimizer with WarmupPolynomialDecay --- ")
     warmup_steps = int(total_steps * config.WARMUP_STEPS)
     decay_steps = total_steps - warmup_steps
     if decay_steps <= 0:
-        decay_steps = 1 # Avoid division by zero or negative steps
+        decay_steps = 1
         logger.warning(f"Total steps ({total_steps}) less than or equal to warmup steps ({warmup_steps}). Setting decay_steps to 1.")
 
     # Instantiate the custom learning rate schedule
@@ -156,15 +146,13 @@ if __name__ == '__main__':
         initial_learning_rate=config.INITIAL_LR,
         decay_steps=decay_steps,
         end_learning_rate=config.END_LR,
-        power=1.0, # Linear decay after warmup
+        power=1.0, 
         warmup_steps=warmup_steps
     )
 
-    # --- Revert to standard Adam (like Test 16) --- 
     print("\n--- USING standard Adam Optimizer with WarmupPolynomialDecay --- ")
     optimizer = tf.keras.optimizers.Adam(
-        learning_rate=learning_rate_schedule # Pass the custom schedule instance
-        # No weight decay parameter for standard Adam
+        learning_rate=learning_rate_schedule
     )
 
     qa_model.compile(
@@ -176,11 +164,10 @@ if __name__ == '__main__':
 
     print("Fine-tuning the model...")
 
-    # --- Restore Original Callbacks --- 
     print("\n--- RE-ENABLING EARLY STOPPING AND CHECKPOINTING ---")
     early_stopping = tf.keras.callbacks.EarlyStopping(
         monitor='val_loss', 
-        patience=5, # Back to patience 5 from Test 5
+        patience=5,
         restore_best_weights=True
     )
     checkpoint_dir = 'C:/tf_checkpoints/'
@@ -188,42 +175,37 @@ if __name__ == '__main__':
         os.makedirs(checkpoint_dir)
         print(f"Created checkpoint directory: {checkpoint_dir}")
     checkpoint = tf.keras.callbacks.ModelCheckpoint(
-        os.path.join(checkpoint_dir, 'best_qa_model_custom_full'), # Save to directory
+        os.path.join(checkpoint_dir, 'best_qa_model_custom_full'),
         monitor='val_loss',
         save_best_only=True,
-        save_weights_only=False, # Save entire model (architecture + weights + optimizer)
+        save_weights_only=False,
         verbose=1
     )
     callbacks = [early_stopping, checkpoint, WandbCallback(save_model=False)]
 
-    # --- Add this section before model.fit() ---
     print("\n--- Attempting to load checkpoint if exists ---")
     checkpoint_path = os.path.join(checkpoint_dir, 'best_qa_model_custom_full')
     if os.path.exists(checkpoint_path):
         print(f"Checkpoint found at {checkpoint_path}. Loading model...")
-        # Load the entire model state, including optimizer
         qa_model = tf.keras.models.load_model(checkpoint_path, custom_objects={
             'WarmupPolynomialDecay': WarmupPolynomialDecay,
             'start_loss': start_loss, 
             'end_loss': end_loss
             })
         print("Model loaded successfully.")
-        # Optionally find the epoch to start from - simpler just to run fit and let it figure out steps
-        # initial_epoch = # Difficult to get accurately without extra saving, but not strictly necessary
+
     else:
         print("No checkpoint found. Starting training from scratch.")
-        # Build and compile model as before (already done earlier in script)
-    # --- End of added section ---
+
 
     print("\n--- USING ORIGINAL VALIDATION DATA ---")
     history, total_training_time = time_training(
         qa_model,
         train_dataset,
-        config.EPOCHS, # Continue training up to the total specified epochs
+        config.EPOCHS,
         validation_data=val_dataset,
         callbacks=callbacks,
         validation_steps=validation_steps
-        # initial_epoch=initial_epoch # Optional but helpful for logging
     )
     print(f"Training completed in {total_training_time:.2f} seconds")
 
