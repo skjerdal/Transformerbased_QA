@@ -112,7 +112,7 @@ This project uses [Weights & Biases (W&B)](https://wandb.ai/) for experiment tra
 ## Project Log
 
 This section documents the experiments, challenges, and findings during the development process.
-**Note: ** This log is not from the start of the project. 
+**Note:** This log is not from the start of the project. 
 
 ### Initial Attempts (Custom Components)
 
