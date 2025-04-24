@@ -20,8 +20,8 @@ MAX_SEQ_LENGTH = 384
 DOC_STRIDE = 128
 BATCH_SIZE = 16  # Standard batch size
 LEARNING_RATE = 5e-5  # Same as your current best configuration
-NUM_EPOCHS = 2  # A few epochs for baseline
-OUTPUT_DIR = "tf210_custom_qa_model"
+NUM_EPOCHS = 3  # A few epochs for baseline
+OUTPUT_DIR = "c:/tf_checkpoints/tf210_custom_qa_model"
 
 # Print TensorFlow version
 logger.info(f"TensorFlow version: {tf.__version__}")

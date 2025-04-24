@@ -89,20 +89,19 @@ if __name__ == '__main__':
     # --- Hyperparameters Reverted to Training Test 5 Style --- 
     print("\n*** RUNNING WITH CUSTOM MODEL CONFIGURATION (Reverted) ***\n")
     hyperparameters = {
-        'TOKENIZER': 'bert-base-uncased', # Back to BERT tokenizer
+        'TOKENIZER': 'bert-base-uncased', 
         'SEQUENCE_LEN': 384,
-        # Dimensions from Training Test 1/5
         'D_MODEL': 768,
         'NUM_HEADS': 12,
-        'DFF': 2048, # From Training Test 1/5
-        'NUM_LAYERS': 6, # Revert to 6 layers like Test 16
-        'DROPOUT_RATE': 0.1, # Revert to 0.1 dropout like Test 16
+        'DFF': 2048,
+        'NUM_LAYERS': 6,
+        'DROPOUT_RATE': 0.1, 
         'BATCH_SIZE': 16,
-        'EPOCHS': 40, # Keep high for long run
-        'INITIAL_LR': 5e-5, # From Test 16
-        'END_LR': 0.0, # For decay schedule
-        'WARMUP_STEPS': 0.1, # Keep warmup
-        'MAX_SAMPLES': None, # Use full dataset
+        'EPOCHS': 20, 
+        'INITIAL_LR': 5e-5,
+        'END_LR': 0.0,
+        'WARMUP_STEPS': 0.1,
+        'MAX_SAMPLES': None,
     }
 
     # Initialize W&B Run
@@ -143,29 +142,28 @@ if __name__ == '__main__':
     def end_loss(y_true, y_pred):
         return tf.keras.losses.sparse_categorical_crossentropy(y_true, y_pred, from_logits=True)
 
-    # --- Use AdamW with Custom Warmup + PolynomialDecay schedule ---
+    # --- Use AdamW with Custom Warmup + PolynomialDecay schedule --- 
     print("\n--- USING AdamW Optimizer with WarmupPolynomialDecay --- ")
     # Calculate decay steps (total steps *after* warmup)
-    # warmup_steps = int(total_steps * config.WARMUP_STEPS)
-    # decay_steps = total_steps - warmup_steps
-    # if decay_steps <= 0:
-    #     decay_steps = 1 # Avoid division by zero or negative steps
-    #     logger.warning(f"Total steps ({total_steps}) less than or equal to warmup steps ({warmup_steps}). Setting decay_steps to 1.")
+    warmup_steps = int(total_steps * config.WARMUP_STEPS)
+    decay_steps = total_steps - warmup_steps
+    if decay_steps <= 0:
+        decay_steps = 1 # Avoid division by zero or negative steps
+        logger.warning(f"Total steps ({total_steps}) less than or equal to warmup steps ({warmup_steps}). Setting decay_steps to 1.")
 
     # Instantiate the custom learning rate schedule
-    # learning_rate_schedule = WarmupPolynomialDecay(
-    #     initial_learning_rate=config.INITIAL_LR,
-    #     decay_steps=decay_steps,
-    #     end_learning_rate=config.END_LR,
-    #     power=1.0, # Linear decay after warmup
-    #     warmup_steps=warmup_steps
-    # )
+    learning_rate_schedule = WarmupPolynomialDecay(
+        initial_learning_rate=config.INITIAL_LR,
+        decay_steps=decay_steps,
+        end_learning_rate=config.END_LR,
+        power=1.0, # Linear decay after warmup
+        warmup_steps=warmup_steps
+    )
 
-    # --- Revert to standard Adam (like Test 16) ---
-    # print("\n--- USING standard Adam Optimizer with WarmupPolynomialDecay --- ") # Modified print statement
-    print("\n--- USING standard Adam Optimizer with Fixed Learning Rate --- ")
+    # --- Revert to standard Adam (like Test 16) --- 
+    print("\n--- USING standard Adam Optimizer with WarmupPolynomialDecay --- ")
     optimizer = tf.keras.optimizers.Adam(
-        learning_rate=config.INITIAL_LR # Pass the fixed initial learning rate directly
+        learning_rate=learning_rate_schedule # Pass the custom schedule instance
         # No weight decay parameter for standard Adam
     )
 
