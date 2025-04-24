@@ -34,7 +34,13 @@ The goal is to build and understand a Transformer model capable of finding the a
 2.  **Create a Python environment** (e.g., using Conda or venv).
 3.  **Install dependencies:**
     ```bash
-    pip install tensorflow numpy tokenizers transformers wandb
+    pip install -r requirements.txt
+    ```
+    This will install all required packages with the exact versions used in development.
+    
+    Alternatively, you can install packages individually:
+    ```bash
+    pip install tensorflow numpy tokenizers transformers wandb datasets evaluate tqdm
     ```
     *(Ensure you have a version of TensorFlow compatible with your GPU and CUDA/cuDNN if using GPU acceleration).* 
 4.  **Download the SQuAD dataset:** Obtain the `squad.json` file (e.g., SQuAD v2.0 `train-v2.0.json`) and place it in the project's root directory.
