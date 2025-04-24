@@ -18,7 +18,6 @@ class PositionalEncoding(layers.Layer):
             tf.range(position, dtype=tf.float32)[:, tf.newaxis],
             tf.range(d_model, dtype=tf.float32)[tf.newaxis, :],
             d_model)
-        # apply sin to even indices in the array; cos to odd indices
         sines = tf.math.sin(angle_rads[:, 0::2])
         cosines = tf.math.cos(angle_rads[:, 1::2])
         pos_encoding = tf.concat([sines, cosines], axis=-1)
@@ -27,4 +26,13 @@ class PositionalEncoding(layers.Layer):
 
     def call(self, inputs):
         # inputs shape: (batch_size, seq_len, d_model)
-        return inputs + self.pos_encoding[:, :tf.shape(inputs)[1], :] 
+        return inputs + self.pos_encoding[:, :tf.shape(inputs)[1], :]
+
+    def get_config(self):
+        """Returns the config of the layer."""
+        config = super().get_config()
+        config.update({
+            "sequence_len": self.sequence_len,
+            "d_model": self.d_model,
+        })
+        return config 
